@@ -1,0 +1,25 @@
+{
+  "name": "tiny2d-physics",
+  "version": "2.0.1",
+  "description": "零依赖的 2D 刚体物理引擎 + 粒子流体（PBF）与自然主题交互沙盒",
+  "main": "physics.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "physics",
+    "physics-engine",
+    "2d",
+    "rigid-body",
+    "fluid",
+    "sph",
+    "pbf",
+    "particle",
+    "collision",
+    "canvas",
+    "simulation",
+    "nature",
+    "sandbox"
+  ],
+  "license": "MIT"
+}

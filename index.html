@@ -1,0 +1,2641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Tiny2D · 自然物理沙盒</title>
+<style>
+  :root {
+    --bg-0: #070b13;
+    --bg-1: #0b1322;
+    --panel: rgba(13, 20, 34, 0.74);
+    --panel-border: rgba(148, 163, 184, 0.16);
+    --text: #e9f0fa;
+    --muted: #8ba0ba;
+    --dim: #5c708c;
+    --accent: #7dd3fc;
+    --accent-soft: rgba(125, 211, 252, 0.14);
+    --warn: #fbbf24;
+    --radius: 18px;
+    --shadow: 0 22px 60px rgba(0, 0, 0, 0.5);
+    --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    --mono: "Cascadia Code", "Consolas", "SFMono-Regular", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-0);
+    color: var(--text);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  canvas#scene {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  body.dragging canvas#scene { cursor: grabbing; }
+  body.dragging { user-select: none; }
+
+  /* ---------------- 左上 HUD ---------------- */
+  .hud {
+    position: fixed;
+    top: 26px;
+    left: 30px;
+    pointer-events: none;
+    z-index: 5;
+    max-width: min(560px, 62vw);
+  }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+  .logo-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px 2px rgba(125, 211, 252, 0.6);
+    flex: 0 0 auto;
+  }
+  .eyebrow .thin { color: #35465c; }
+
+  .badge {
+    margin-left: 2px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(94, 234, 212, 0.28);
+    background: rgba(45, 212, 191, 0.08);
+    color: #5eead4;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+  .badge::before {
+    content: "";
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-right: 6px;
+    vertical-align: 1px;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .badge.paused {
+    border-color: rgba(251, 191, 36, 0.32);
+    background: rgba(251, 191, 36, 0.08);
+    color: var(--warn);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 3.2vw, 42px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    font-weight: 650;
+    background: linear-gradient(110deg, #ffffff 20%, #b7ddff 55%, #7dd3fc 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .subtitle {
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 0.01em;
+  }
+
+  .stats {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-top: 20px;
+    padding: 12px 18px;
+    width: fit-content;
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    background: rgba(9, 15, 26, 0.55);
+    backdrop-filter: blur(14px);
+  }
+  .stat {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+  }
+  .stat span {
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+  }
+  .stat b {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: #d9ecff;
+    font-variant-numeric: tabular-nums;
+    min-width: 22px;
+  }
+  .stat i {
+    font-style: normal;
+    font-size: 10px;
+    color: var(--dim);
+    margin-left: -3px;
+  }
+
+  /* ---------------- 右侧参数面板 ---------------- */
+  .panel {
+    position: fixed;
+    top: 26px;
+    right: 30px;
+    width: 248px;
+    z-index: 6;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 18px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  }
+  .panel-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: #c7d8ec;
+  }
+  .panel-head-actions { display: flex; gap: 6px; align-items: center; }
+
+  .icon-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(148, 163, 184, 0.06);
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: 0.16s ease;
+  }
+  .icon-btn:hover { color: var(--text); border-color: rgba(148, 163, 184, 0.35); }
+
+  .panel-body { padding: 16px 18px 18px; }
+  .panel.collapsed .panel-body { display: none; }
+
+  .slider { display: block; margin-bottom: 15px; }
+  .slider-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 9px;
+  }
+  .slider-head output {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  input[type="range"] {
+    --fill: 50%;
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      rgba(125, 211, 252, 0.85) 0%,
+      rgba(125, 211, 252, 0.85) var(--fill),
+      rgba(148, 163, 184, 0.18) var(--fill),
+      rgba(148, 163, 184, 0.18) 100%
+    );
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #eaf6ff;
+    border: 2px solid #0a101c;
+    box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.5);
+    transition: box-shadow 0.15s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.65);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #eaf6ff;
+    border: 2px solid #0a101c;
+    box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.5);
+  }
+
+  .divider {
+    height: 1px;
+    background: rgba(148, 163, 184, 0.1);
+    margin: 17px 0 15px;
+  }
+
+  .switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: var(--muted);
+    padding: 5px 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .switch .track {
+    position: relative;
+    width: 34px;
+    height: 19px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.2);
+    transition: background 0.18s ease;
+    flex: 0 0 auto;
+  }
+  .switch .thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #c7d8ec;
+    transition: transform 0.18s ease, background 0.18s ease;
+  }
+  .switch input:checked + .track { background: rgba(125, 211, 252, 0.9); }
+  .switch input:checked + .track .thumb {
+    transform: translateX(15px);
+    background: #071018;
+  }
+
+  /* ---------------- 底部工具栏 ---------------- */
+  .toolbar {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px;
+    z-index: 7;
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    background: var(--panel);
+    backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: var(--shadow);
+    max-width: calc(100vw - 32px);
+  }
+
+  .toolbar button {
+    font-family: var(--font);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 9px 13px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  }
+  .toolbar button:hover {
+    color: var(--text);
+    background: rgba(148, 163, 184, 0.1);
+  }
+  .toolbar button.active {
+    color: #06121f;
+    background: var(--accent);
+    font-weight: 650;
+    box-shadow: 0 0 18px rgba(125, 211, 252, 0.35);
+  }
+  .toolbar .scene-btn.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: rgba(125, 211, 252, 0.32);
+    box-shadow: none;
+    font-weight: 600;
+  }
+  .toolbar button.paused {
+    color: var(--warn);
+    border-color: rgba(251, 191, 36, 0.35);
+    background: rgba(251, 191, 36, 0.07);
+  }
+
+  .toolbar-sep {
+    width: 1px;
+    height: 22px;
+    background: rgba(148, 163, 184, 0.14);
+    margin: 0 3px;
+    flex: 0 0 auto;
+  }
+
+  .seg { display: flex; gap: 2px; }
+  .scenes { display: flex; gap: 2px; }
+
+  .hint {
+    position: fixed;
+    left: 30px;
+    bottom: 32px;
+    margin: 0;
+    z-index: 5;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--dim);
+    pointer-events: none;
+    line-height: 1.8;
+  }
+  .hint kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 1px 5px;
+    background: rgba(148, 163, 184, 0.06);
+  }
+
+  .error-banner {
+    position: fixed;
+    left: 50%;
+    top: 24px;
+    transform: translateX(-50%);
+    z-index: 99;
+    max-width: min(720px, calc(100vw - 48px));
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(248, 113, 113, 0.5);
+    background: rgba(69, 10, 10, 0.9);
+    color: #fecaca;
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    box-shadow: var(--shadow);
+  }
+  .error-banner[hidden] { display: none; }
+
+  .mobile-params {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 8;
+    padding: 8px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .mobile-params.active {
+    color: var(--accent);
+    border-color: rgba(125, 211, 252, 0.35);
+    background: var(--accent-soft);
+  }
+
+  @media (max-width: 1020px) {
+    .hint { display: none; }
+    .hud { max-width: 52vw; }
+    .stats { gap: 14px; padding: 10px 14px; }
+    .panel { width: 224px; right: 16px; top: 16px; }
+    .hud { left: 18px; top: 18px; }
+    .toolbar { bottom: 14px; gap: 4px; padding: 7px; }
+    .toolbar button { padding: 8px 10px; font-size: 12px; }
+  }
+
+  @media (max-width: 760px) {
+    .subtitle { display: none; }
+    .stats { margin-top: 12px; gap: 12px; flex-wrap: wrap; }
+    .toolbar { flex-wrap: wrap; justify-content: center; width: calc(100vw - 20px); bottom: 10px; }
+    .toolbar-sep { display: none; }
+    .hud { max-width: calc(100vw - 36px); }
+
+    .mobile-params {
+      display: inline-flex;
+    }
+    .panel {
+      display: none;
+      top: 150px;
+      right: 12px;
+      bottom: auto;
+      width: 232px;
+      z-index: 9;
+    }
+    .panel.mobile-open { display: block; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <header class="hud">
+    <div class="eyebrow">
+      <span class="logo-dot"></span>
+      <span>Tiny2D <span class="thin">/</span> 2D 刚体物理引擎</span>
+      <span class="badge" id="statusBadge">运行中</span>
+    </div>
+    <h1>自然沙盒</h1>
+    <p class="subtitle">石头、枯木、水流与落叶 —— 每秒 120 次求解的自然实验场</p>
+    <div class="stats">
+      <div class="stat"><span>FPS</span><b id="statFps">60</b></div>
+      <div class="stat"><span>刚体</span><b id="statBodies">0</b></div>
+      <div class="stat"><span>水粒子</span><b id="statWater">0</b></div>
+      <div class="stat"><span>接触</span><b id="statContacts">0</b></div>
+      <div class="stat"><span>步进</span><b id="statStep">0.00</b><i>ms</i></div>
+    </div>
+  </header>
+
+  <aside class="panel" id="panel">
+    <div class="panel-head">
+      <span class="panel-title">物理参数</span>
+      <div class="panel-head-actions">
+        <button type="button" class="icon-btn" id="panelToggle" aria-label="折叠参数面板" title="折叠 / 展开">−</button>
+      </div>
+    </div>
+    <div class="panel-body" id="panelBody">
+      <label class="slider">
+        <div class="slider-head"><span>重力</span><output id="outGravity">9.8 m/s²</output></div>
+        <input type="range" id="inGravity" min="0" max="25" step="0.1" value="9.8">
+      </label>
+      <label class="slider">
+        <div class="slider-head"><span>弹性倍率</span><output id="outRestitution">1.00×</output></div>
+        <input type="range" id="inRestitution" min="0" max="2" step="0.05" value="1">
+      </label>
+      <label class="slider">
+        <div class="slider-head"><span>摩擦倍率</span><output id="outFriction">1.00×</output></div>
+        <input type="range" id="inFriction" min="0" max="2" step="0.05" value="1">
+      </label>
+      <label class="slider">
+        <div class="slider-head"><span>求解迭代</span><output id="outIterations">10</output></div>
+        <input type="range" id="inIterations" min="1" max="20" step="1" value="10">
+      </label>
+      <div class="divider"></div>
+      <label class="switch">
+        <span>显示接触点</span>
+        <input type="checkbox" id="inContacts">
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+      <label class="switch">
+        <span>显示接触法线</span>
+        <input type="checkbox" id="inNormals">
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+    </div>
+  </aside>
+
+  <button type="button" class="mobile-params" id="btnPanelMobile" aria-label="打开物理参数面板">参数</button>
+
+  <div class="toolbar" id="toolbar">
+    <div class="seg" id="shapeSeg">
+      <button type="button" data-shape="rock" class="active">石头</button>
+      <button type="button" data-shape="wood">木头</button>
+      <button type="button" data-shape="water">水</button>
+      <button type="button" data-shape="leaf">树叶</button>
+    </div>
+    <div class="toolbar-sep"></div>
+    <div class="scenes">
+      <button type="button" class="scene-btn" data-preset="showcase">示例</button>
+      <button type="button" class="scene-btn" data-preset="cairn">石堆</button>
+      <button type="button" class="scene-btn" data-preset="waterfall">瀑布</button>
+      <button type="button" class="scene-btn" data-preset="leaves">落叶</button>
+      <button type="button" class="scene-btn" data-preset="empty">清空</button>
+    </div>
+    <div class="toolbar-sep"></div>
+    <button type="button" id="btnPause">暂停</button>
+    <button type="button" id="btnStep" title="暂停后前进一步">单步</button>
+  </div>
+
+  <p class="hint">
+    拖拽物体抓取 · 点选「水」后按住倾倒 · <kbd>空格</kbd> 暂停 · <kbd>R</kbd> 重置 · <kbd>1</kbd>–<kbd>4</kbd> 切换元素
+  </p>
+
+  <div class="error-banner" id="errorBanner" hidden></div>
+
+  <script src="physics.js"></script>
+  <script src="nature.js"></script>
+  <script src="fluid.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // ============================================================
+    // 全局状态
+    // ============================================================
+    const { Vec2, Body, World, Shapes } = Tiny2D;
+    const Nature = window.TinyNature;
+    const Fluid = window.TinyFluid;
+
+    const FIXED_DT = 1 / 120;
+    const MAX_STEPS = 6;
+    const MAX_BODIES = 160;
+
+    // 每种自然元素的物理“性格”和配色
+    const ELEMENTS = {
+      rock: {
+        label: '石头',
+        density: 2.2,
+        restitution: 0.06,
+        friction: 0.72,
+        angularDamping: 0.22,
+        colors: ['#9aa1a8', '#858c94', '#a8a49a', '#7c838b', '#8f938d'],
+      },
+      wood: {
+        label: '木头',
+        density: 0.6,
+        restitution: 0.12,
+        friction: 0.6,
+        angularDamping: 0.06,
+        colors: ['#9a6b45', '#8b5e3c', '#a97950', '#7a5233', '#a06a43'],
+      },
+      water: {
+        label: '水',
+        colors: ['#5ee0e8', '#67e8f9', '#4cc9f0'],
+      },
+      leaf: {
+        label: '树叶',
+        density: 0.28,
+        restitution: 0.03,
+        friction: 0.35,
+        linearDamping: 2.6,
+        angularDamping: 0.45,
+        colors: ['#8bc34a', '#9ccc65', '#7cb342', '#c9b458', '#d9a441', '#a3c94a'],
+      },
+    };
+
+    const state = {
+      world: null,
+      arena: [],
+      preset: 'showcase',
+      paused: false,
+      shapeKind: 'rock',
+      showContacts: false,
+      showNormals: false,
+      gravity: 9.8,
+      restitutionScale: 1,
+      frictionScale: 1,
+      iterations: 10,
+      ppm: 46,
+      cssW: 0,
+      cssH: 0,
+      dpr: 1,
+      worldW: 0,
+      worldH: 0,
+      floorTop: 0,
+      mouse: new Vec2(),
+      grab: null,
+      fluid: null,
+      fluidEmitters: [],
+      fluidCycle: null,
+      waterfalls: [],
+      wetPaths: [],
+      pouring: false,
+      pourAcc: 0,
+      fluidScale: 2,
+      fluidCanvas: null,
+      fluidCtx: null,
+      fluidImage: null,
+      fluidField: null,
+      fluidBlur: null,
+      acc: 0,
+      fps: 60,
+      stepMs: 0,
+      frameCount: 0,
+      fpsTime: 0,
+      hudTime: 0,
+    };
+
+    // ============================================================
+    // DOM
+    // ============================================================
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const statusBadge = document.getElementById('statusBadge');
+    const statFps = document.getElementById('statFps');
+    const statBodies = document.getElementById('statBodies');
+    const statWater = document.getElementById('statWater');
+    const statContacts = document.getElementById('statContacts');
+    const statStep = document.getElementById('statStep');
+    const panel = document.getElementById('panel');
+    const panelToggle = document.getElementById('panelToggle');
+    const btnPanelMobile = document.getElementById('btnPanelMobile');
+    const btnPause = document.getElementById('btnPause');
+    const btnStep = document.getElementById('btnStep');
+    const errorBanner = document.getElementById('errorBanner');
+    const shapeSeg = document.getElementById('shapeSeg');
+    const inGravity = document.getElementById('inGravity');
+    const inRestitution = document.getElementById('inRestitution');
+    const inFriction = document.getElementById('inFriction');
+    const inIterations = document.getElementById('inIterations');
+    const inContacts = document.getElementById('inContacts');
+    const inNormals = document.getElementById('inNormals');
+    const outGravity = document.getElementById('outGravity');
+    const outRestitution = document.getElementById('outRestitution');
+    const outFriction = document.getElementById('outFriction');
+    const outIterations = document.getElementById('outIterations');
+
+    let bgGradient = null;
+    let vignetteGradient = null;
+
+    // ============================================================
+    // 工具函数
+    // ============================================================
+    function clamp(value, min, max) {
+      return value < min ? min : value > max ? max : value;
+    }
+
+    function rand(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function pick(list) {
+      return list[Math.floor(Math.random() * list.length)];
+    }
+
+    const shadeCache = new Map();
+    function hexToRgb(color) {
+      let h = color.trim();
+      if (h.startsWith('rgb')) {
+        const parts = h.replace(/rgba?\(|\)/g, '').split(',');
+        return [
+          parseInt(parts[0], 10),
+          parseInt(parts[1], 10),
+          parseInt(parts[2], 10),
+        ];
+      }
+      h = h.replace('#', '');
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      const n = parseInt(h, 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    /** amount > 0 变亮，< 0 变暗 */
+    function shade(hex, amount) {
+      const key = hex + '|' + amount;
+      const cached = shadeCache.get(key);
+      if (cached) return cached;
+      const rgb = hexToRgb(hex);
+      const target = amount >= 0 ? [255, 255, 255] : [0, 0, 0];
+      const t = Math.min(1, Math.abs(amount));
+      const out =
+        'rgb(' +
+        Math.round(rgb[0] + (target[0] - rgb[0]) * t) + ',' +
+        Math.round(rgb[1] + (target[1] - rgb[1]) * t) + ',' +
+        Math.round(rgb[2] + (target[2] - rgb[2]) * t) + ')';
+      shadeCache.set(key, out);
+      return out;
+    }
+
+    function pickColor(kind) {
+      const element = ELEMENTS[kind];
+      return element ? pick(element.colors) : '#9aa1a8';
+    }
+
+    function isArena(body) {
+      return Boolean(body.userData && body.userData.arena);
+    }
+
+    // ============================================================
+    // 世界构建
+    // ============================================================
+    function buildBackgroundGradients() {
+      bgGradient = ctx.createLinearGradient(0, 0, 0, state.cssH);
+      bgGradient.addColorStop(0, '#0a1120');
+      bgGradient.addColorStop(0.55, '#080d17');
+      bgGradient.addColorStop(1, '#05080f');
+
+      vignetteGradient = ctx.createRadialGradient(
+        state.cssW * 0.5, state.cssH * 0.42, Math.min(state.cssW, state.cssH) * 0.15,
+        state.cssW * 0.5, state.cssH * 0.6, Math.max(state.cssW, state.cssH) * 0.78
+      );
+      vignetteGradient.addColorStop(0, 'rgba(4, 8, 16, 0)');
+      vignetteGradient.addColorStop(0.65, 'rgba(4, 7, 13, 0.18)');
+      vignetteGradient.addColorStop(1, 'rgba(2, 4, 9, 0.62)');
+    }
+
+    function buildWorld() {
+      const world = new World({
+        gravity: new Vec2(0, state.gravity),
+        iterations: state.iterations,
+      });
+      world.restitutionThreshold = 1.0;
+      state.world = world;
+      state.arena = [];
+      state.grab = null;
+
+      state.fluid = new Fluid({
+        h: 0.18,
+        restDensity: 3.19,
+        stiffness: 0.2,
+        iterations: 3,
+        viscosity: 0.02,
+        maxParticles: 1100,
+        maxSpeed: 12,
+        gravity: state.gravity,
+        coupling: 0.35,
+      });
+      state.fluidEmitters = [];
+      state.fluidCycle = null;
+      state.waterfalls = [];
+      state.wetPaths = [];
+      state.pouring = false;
+      state.pourAcc = 0;
+
+      const W = state.worldW;
+      const H = state.worldH;
+      const wall = 0.8; // 米
+      // 底部为工具栏预留空间（移动端工具栏更高）
+      const reservePx = state.cssW < 760 ? 155 : 100;
+      const floorHeight = Math.max(1.2, reservePx / state.ppm);
+      state.floorTop = H - floorHeight;
+
+      function addStatic(shape, x, y) {
+        const body = new Body(shape, {
+          position: new Vec2(x, y),
+          isStatic: true,
+          friction: 0.6,
+          restitution: 0.1,
+          color: '#0e1728',
+        });
+        body.userData = { arena: true };
+        world.addBody(body);
+        state.arena.push(body);
+        return body;
+      }
+
+      // 地板、天花板、左右墙（墙面正好贴住可视区域边缘）
+      addStatic(Shapes.box(W + wall * 2, floorHeight), W / 2, H - floorHeight / 2);
+      addStatic(Shapes.box(W + wall * 2, wall), W / 2, -wall / 2);
+      addStatic(Shapes.box(wall, H), -wall / 2, H / 2);
+      addStatic(Shapes.box(wall, H), W + wall / 2, H / 2);
+    }
+
+    function resizeCanvas() {
+      state.cssW = window.innerWidth;
+      state.cssH = window.innerHeight;
+      state.dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      canvas.width = Math.round(state.cssW * state.dpr);
+      canvas.height = Math.round(state.cssH * state.dpr);
+      ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+
+      state.ppm = Math.max(26, Math.min(54, Math.min(state.cssW, state.cssH) / 13));
+      state.worldW = state.cssW / state.ppm;
+      state.worldH = state.cssH / state.ppm;
+
+      initFluidRender();
+      buildBackgroundGradients();
+      buildWorld();
+      loadPreset(state.preset);
+    }
+
+    // ============================================================
+    // 流体水面渲染（低分辨率密度场 + 平滑放大）
+    // ============================================================
+    function initFluidRender() {
+      const scale = state.fluidScale;
+      const width = Math.max(1, Math.ceil(state.cssW / scale));
+      const height = Math.max(1, Math.ceil(state.cssH / scale));
+      if (!state.fluidCanvas) {
+        state.fluidCanvas = document.createElement('canvas');
+        state.fluidCtx = state.fluidCanvas.getContext('2d');
+      }
+      state.fluidCanvas.width = width;
+      state.fluidCanvas.height = height;
+      state.fluidImage = state.fluidCtx.createImageData(width, height);
+      state.fluidField = new Float32Array(width * height);
+      state.fluidBlur = new Float32Array(width * height);
+    }
+
+    // ============================================================
+    // 生成自然物体
+    // ============================================================
+    function addNature(kind, x, y, angle, options) {
+      const element = ELEMENTS[kind];
+      const opts = options || {};
+      const ud = { kind: kind, phase: rand(0, Math.PI * 2) };
+      let shape;
+
+      if (kind === 'rock') {
+        const radius = opts.radius || rand(0.22, 0.38);
+        if (opts.flat) {
+          // 上下平整的扁石，适合垒石堆
+          const thickness = opts.thickness || radius * 2 * 0.34;
+          const roughness = opts.roughness != null ? opts.roughness : 0.15;
+          const stone = Nature.makeFlatStoneShape(radius, thickness, roughness);
+          shape = stone.shape;
+          ud.radius = radius;
+          ud.thickness = thickness;
+          ud.specks = stone.specks;
+        } else {
+          const flatten = opts.flatten || rand(0.72, 1);
+          const roughness = opts.roughness != null ? opts.roughness : rand(0.2, 0.38);
+          const rock = Nature.makeRockShape(radius, flatten, roughness);
+          shape = rock.shape;
+          ud.radius = rock.radius;
+          ud.flatten = flatten;
+          ud.specks = rock.specks;
+        }
+      } else if (kind === 'wood') {
+        const length = opts.length || rand(0.9, 1.6);
+        const thickness = opts.thickness || rand(0.2, 0.32);
+        shape = Nature.makeLogShape(length, thickness);
+        ud.length = length;
+        ud.thickness = thickness;
+      } else {
+        const length = opts.length || rand(0.5, 0.8);
+        const width = opts.width || length * rand(0.32, 0.48);
+        shape = Nature.makeLeafShape(length, width);
+        ud.length = length;
+        ud.width = width;
+      }
+
+      const color = opts.color || pickColor(kind);
+      ud.color = color;
+
+      const baseRestitution =
+        opts.restitution != null ? opts.restitution : element.restitution;
+      const baseFriction = opts.friction != null ? opts.friction : element.friction;
+      const baseDensity = opts.density != null ? opts.density : element.density;
+      ud.baseRestitution = baseRestitution;
+      ud.baseFriction = baseFriction;
+      ud.baseDensity = baseDensity;
+
+      const body = new Body(shape, {
+        position: new Vec2(x, y),
+        angle: angle || 0,
+        density: baseDensity,
+        restitution: clamp(baseRestitution * state.restitutionScale, 0, 1),
+        friction: Math.max(0, baseFriction * state.frictionScale),
+        linearDamping:
+          opts.linearDamping != null
+            ? opts.linearDamping
+            : element.linearDamping || 0,
+        angularDamping:
+          opts.angularDamping != null
+            ? opts.angularDamping
+            : element.angularDamping || 0,
+        color: color,
+      });
+
+      body.userData = ud;
+      state.world.addBody(body);
+      trimBodies();
+      return body;
+    }
+
+    function trimBodies() {
+      const world = state.world;
+      let dynamicCount = world.dynamicBodyCount;
+      for (let i = 0; i < world.bodies.length && dynamicCount > MAX_BODIES; ) {
+        const body = world.bodies[i];
+        if (!body.isStatic && (!state.grab || state.grab.body !== body)) {
+          world.removeBody(body);
+          dynamicCount--;
+        } else {
+          i++;
+        }
+      }
+    }
+
+    function spawnAt(point) {
+      const margin = 0.5;
+      const x = clamp(point.x, margin, state.worldW - margin);
+      const y = clamp(point.y, margin, state.floorTop - margin);
+      addNature(state.shapeKind, x, y, (Math.random() - 0.5) * 0.8);
+    }
+
+    // ============================================================
+    // 场景预设
+    // ============================================================
+    function clearScene() {
+      const world = state.world;
+      if (!world) return;
+      for (const body of world.bodies.slice()) {
+        if (!isArena(body)) world.removeBody(body);
+      }
+      state.grab = null;
+      stopPouring();
+      state.fluidEmitters = [];
+      state.fluidCycle = null;
+      state.waterfalls = [];
+      state.wetPaths = [];
+      if (state.fluid) state.fluid.clear();
+      world.contacts.length = 0;
+    }
+
+    function addSceneStaticBox(width, height, x, y, angle, material) {
+      const mat = material || 'stone';
+      const body = new Body(Shapes.box(width, height), {
+        position: new Vec2(x, y),
+        angle,
+        isStatic: true,
+        friction: 0.4,
+        restitution: 0.05,
+        color: mat === 'wood' ? '#8b5e3c' : '#334155',
+      });
+      body.userData = {
+        sceneStatic: true,
+        material: mat,
+        length: width,
+        thickness: height,
+        kind: 'wood',
+        color: mat === 'wood' ? '#8b5e3c' : '#334155',
+      };
+      state.world.addBody(body);
+      return body;
+    }
+
+    /** 在 baseY（地面高度）上垒一座石堆，返回顶部高度 */
+    function buildCairn(cx, baseY, radii, thicknessRatio) {
+      const ratio = thicknessRatio || 0.34;
+      let topY = baseY;
+      for (let i = 0; i < radii.length; i++) {
+        const radius = radii[i];
+        const thickness = radius * 2 * ratio;
+        const body = addNature(
+          'rock',
+          cx + rand(-0.01, 0.01),
+          topY - thickness / 2,
+          rand(-0.01, 0.01),
+          {
+            radius: radius,
+            flat: true,
+            thickness: thickness,
+            roughness: 0.12,
+            restitution: 0,
+            friction: 0.9,
+            angularDamping: 0.6,
+          }
+        );
+        body.computeAABB();
+        topY = body._aabb.minY - 0.002;
+      }
+      return topY;
+    }
+
+    /** 默认场景：左侧瀑布水池 + 右侧石堆 + 两侧木架 + 飘落的树叶 */
+    function sceneShowcase() {
+      clearScene();
+      const W = state.worldW;
+      const H = state.worldH;
+
+      // 右侧石堆
+      buildCairn(W * 0.68, state.floorTop, [0.52, 0.45, 0.38, 0.31, 0.24], 0.34);
+
+      // 左侧瀑布水池
+      addPoolWalls(0.6, 6.0, 1.8);
+      fillPool(0.6, 6.0, 1.15);
+      addNature('rock', 2.55, state.floorTop - 1.5, 0.2, { radius: 0.34, flatten: 0.75 });
+      addNature('wood', 2.0, state.floorTop - 1.8, 0.1, { length: 1.2, thickness: 0.26 });
+
+      // 左侧木架
+      const shelf1Y = Math.max(H * 0.3, 3.5);
+      addSceneStaticBox(2.9, 0.24, 1.45, shelf1Y, 0, 'wood');
+      const top1 = shelf1Y - 0.12;
+      addNature('rock', 0.85, top1 - 0.18, rand(-0.4, 0.4), { radius: 0.26, flatten: 0.8 });
+      addNature('wood', 1.75, top1 - 0.11, 0.08, { length: 0.62, thickness: 0.2 });
+      addNature('leaf', 2.45, top1 - 0.06, rand(-0.7, 0.7), { length: 0.5 });
+
+      // 木架边缘伸出的木槽，水从槽口自由落下，注入水池
+      addSceneStaticBox(1.4, 0.16, 3.4, shelf1Y - 0.24, 0, 'wood');
+      state.fluidCycle = {
+        drain: { x0: 0.9, x1: 5.7, y: state.floorTop - 1.5 },
+        // 粒子只在落水点制造水花，落水本身由水带渲染，避免在槽口堆水
+        source: { x: 4.55, y: state.floorTop - 1.05, spreadX: 0.5, spreadY: 0.12 },
+        flow: 70,
+      };
+      state.waterfalls.push({
+        x: 4.05,
+        topY: shelf1Y - 0.36,
+        width: 0.8,
+        bottom: state.floorTop - 0.95,
+      });
+
+      // 右侧木架
+      const shelf2Y = Math.max(H * 0.52, H * 0.3 + 2.2);
+      addSceneStaticBox(2.4, 0.24, W - 1.2, shelf2Y, 0, 'wood');
+      const top2 = shelf2Y - 0.12;
+      addNature('rock', W - 1.75, top2 - 0.15, 0, { radius: 0.22, flatten: 0.85 });
+      addNature('wood', W - 1.05, top2 - 0.1, -0.1, { length: 0.6, thickness: 0.19 });
+      addNature('leaf', W - 0.55, top2 - 0.05, 0.3, { length: 0.44 });
+
+      // 地面上的木头与石头
+      addNature('wood', W * 0.82, state.floorTop - 0.16, -0.12, { length: 1.5, thickness: 0.28 });
+      addNature('rock', W * 0.79, state.floorTop - 0.24, 0, { radius: 0.32 });
+      addNature('rock', W * 0.91, state.floorTop - 0.2, 0, { radius: 0.26 });
+
+      // 飘落的树叶
+      for (let i = 0; i < 10; i++) {
+        addNature('leaf', rand(W * 0.12, W * 0.88), rand(0.5, H * 0.45), Math.random() * Math.PI * 2);
+      }
+    }
+
+    /** 石堆场景：水池中央的石塔，周围散落自然物 */
+    function sceneCairn() {
+      clearScene();
+      const W = state.worldW;
+      const H = state.worldH;
+
+      addPoolWalls(W * 0.34, W * 0.66, 1.8);
+      fillPool(W * 0.34, W * 0.66, 0.42);
+
+      buildCairn(W / 2, state.floorTop, [0.62, 0.54, 0.47, 0.4, 0.33, 0.27, 0.21], 0.34);
+
+      const rocks = [
+        [0.12, 0.3],
+        [0.22, 0.26],
+        [0.8, 0.32],
+        [0.89, 0.25],
+      ];
+      for (const [fx, radius] of rocks) {
+        addNature('rock', W * fx, state.floorTop - radius * 0.7, Math.random() * Math.PI, {
+          radius: radius,
+          flatten: rand(0.6, 0.85),
+        });
+      }
+      addNature('wood', W * 0.13, state.floorTop - 0.16, 0.2, { length: 1.5, thickness: 0.28 });
+      addNature('wood', W * 0.87, state.floorTop - 0.16, -0.15, { length: 1.3, thickness: 0.26 });
+
+      for (let i = 0; i < 9; i++) {
+        addNature('leaf', rand(W * 0.15, W * 0.85), rand(0.5, H * 0.35), Math.random() * Math.PI * 2);
+      }
+    }
+
+    /** 场景用的静态石头（做池壁、河岸，不参与刚体堆叠） */
+    function addSceneStaticRock(radius, flatten, x, y, angle) {
+      const rock = Nature.makeRockShape(radius, flatten, 0.16);
+      const color = pick(['#8d939b', '#7d838b', '#9aa0a6']);
+      const body = new Body(rock.shape, {
+        position: new Vec2(x, y),
+        angle: angle || 0,
+        isStatic: true,
+        friction: 0.6,
+        restitution: 0.1,
+        color: color,
+      });
+      body.userData = {
+        sceneStatic: true,
+        material: 'rock',
+        kind: 'rock',
+        radius: radius,
+        flatten: flatten,
+        specks: rock.specks,
+        color: color,
+      };
+      state.world.addBody(body);
+      return body;
+    }
+
+    /** 用叠起来的静态石头围出一个水潭（左右池壁） */
+    function addPoolWalls(leftX, rightX, height) {
+      const layers = Math.max(1, Math.round(height / 0.55));
+      // 看不见的实体挡墙，保证水不会从石头缝隙里漏出去
+      for (const x of [leftX, rightX]) {
+        const barrier = new Body(Shapes.box(0.3, height + 0.6), {
+          position: new Vec2(x, state.floorTop - (height + 0.6) / 2),
+          isStatic: true,
+        });
+        barrier.userData = { invisible: true };
+        state.world.addBody(barrier);
+      }
+      for (const x of [leftX, rightX]) {
+        for (let i = 0; i < layers; i++) {
+          const radius = 0.58 - i * 0.05;
+          addSceneStaticRock(
+            radius,
+            0.72,
+            x + rand(-0.06, 0.06),
+            state.floorTop - 0.3 - i * 0.62,
+            rand(-0.4, 0.4)
+          );
+        }
+      }
+    }
+
+    function fillPool(leftX, rightX, depth, spacing) {
+      state.fluid.fillRect(
+        leftX + 0.8,
+        state.floorTop - depth,
+        rightX - 0.8,
+        state.floorTop - 0.06,
+        spacing || 0.09
+      );
+    }
+
+    /** 瀑布场景：木槽从高处引水，落入下方石潭，水循环不断流 */
+    function sceneWaterfall() {
+      clearScene();
+      const W = state.worldW;
+      const H = state.worldH;
+
+      addPoolWalls(W * 0.36, W * 0.64, 1.9);
+      fillPool(W * 0.36, W * 0.64, 0.9);
+
+      // 水潭里的浮木与石头（从上方落入水中）
+      addNature('wood', W * 0.5, state.floorTop - 1.5, 0.25, { length: 1.8, thickness: 0.3 });
+      addNature('rock', W * 0.44, state.floorTop - 1.2, 0.3, { radius: 0.3, flatten: 0.7 });
+      addNature('rock', W * 0.57, state.floorTop - 1.3, 0, { radius: 0.34, flatten: 0.75 });
+
+      // 从左侧高处斜伸下来的木槽，水沿槽流入水潭
+      const chuteTopX = W * 0.08;
+      const chuteTopY = H * 0.22;
+      const chuteEndX = W * 0.44;
+      const chuteEndY = state.floorTop - 3.2;
+      const cdx = chuteEndX - chuteTopX;
+      const cdy = chuteEndY - chuteTopY;
+      const chuteLen = Math.hypot(cdx, cdy);
+      const chuteAngle = Math.atan2(cdy, cdx);
+      addSceneStaticBox(
+        chuteLen, 0.32,
+        (chuteTopX + chuteEndX) / 2,
+        (chuteTopY + chuteEndY) / 2,
+        chuteAngle,
+        'wood'
+      );
+      // 支撑柱
+      const supportX = chuteTopX + cdx * 0.62;
+      const supportTopY = chuteTopY + cdy * 0.62;
+      addSceneStaticBox(0.3, state.floorTop - supportTopY, supportX,
+        supportTopY + (state.floorTop - supportTopY) / 2, 0, 'wood');
+
+      state.fluidCycle = {
+        drain: { x0: W * 0.37, x1: W * 0.63, y: state.floorTop - 1.5 },
+        source: { x: chuteEndX, y: state.floorTop - 1.05, spreadX: 0.5, spreadY: 0.12 },
+        flow: 90,
+      };
+      state.waterfalls.push({
+        x: chuteEndX,
+        topY: chuteEndY - 0.12,
+        width: 0.72,
+        bottom: state.floorTop - 0.85,
+      });
+      state.wetPaths.push({
+        x0: chuteTopX + 0.6,
+        y0: chuteTopY - 0.14,
+        x1: chuteEndX,
+        y1: chuteEndY - 0.12,
+        width: 0.3,
+      });
+
+      // 池边散落的石头
+      for (let i = 0; i < 5; i++) {
+        addNature('rock', rand(W * 0.3, W * 0.34), state.floorTop - rand(0.3, 1.1), Math.random() * Math.PI, {
+          radius: rand(0.18, 0.3),
+          flatten: rand(0.6, 0.9),
+        });
+      }
+
+      for (let i = 0; i < 10; i++) {
+        addNature('leaf', rand(W * 0.2, W * 0.72), rand(0.5, H * 0.5), Math.random() * Math.PI * 2);
+      }
+    }
+
+    /** 落叶场景：大量树叶旋转飘落，有的会漂在池塘水面上 */
+    function sceneLeaves() {
+      clearScene();
+      const W = state.worldW;
+      const H = state.worldH;
+
+      addNature('rock', W * 0.14, state.floorTop - 0.3, 0, { radius: 0.4 });
+      addNature('rock', W * 0.3, state.floorTop - 0.22, 0, { radius: 0.3 });
+      addNature('rock', W * 0.84, state.floorTop - 0.3, 0, { radius: 0.38 });
+      addNature('wood', W * 0.22, state.floorTop - 0.16, 0.12, { length: 1.8, thickness: 0.3 });
+      addNature('wood', W * 0.9, state.floorTop - 0.15, -0.2, { length: 1.4, thickness: 0.26 });
+
+      // 落叶池塘
+      addPoolWalls(W * 0.34, W * 0.66, 1.7);
+      fillPool(W * 0.34, W * 0.66, 0.5);
+      addNature('wood', W * 0.5, state.floorTop - 1.1, 0.35, { length: 1.4, thickness: 0.26 });
+
+      for (let i = 0; i < 46; i++) {
+        addNature('leaf', rand(0.6, W - 0.6), rand(0.3, H * 0.78), Math.random() * Math.PI * 2);
+      }
+    }
+
+    function sceneEmpty() {
+      clearScene();
+    }
+
+    const PRESETS = ['showcase', 'cairn', 'waterfall', 'leaves', 'empty'];
+
+    function loadPreset(name) {
+      if (PRESETS.indexOf(name) === -1) name = 'showcase';
+      state.preset = name;
+      state.acc = 0;
+      if (name === 'cairn') sceneCairn();
+      else if (name === 'waterfall') sceneWaterfall();
+      else if (name === 'leaves') sceneLeaves();
+      else if (name === 'empty') sceneEmpty();
+      else sceneShowcase();
+
+      document.querySelectorAll('[data-preset]').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.preset === name);
+      });
+      updateHud();
+    }
+
+    // ============================================================
+    // 暂停 / 单步
+    // ============================================================
+    function setPaused(paused) {
+      state.paused = paused;
+      state.acc = 0;
+      if (paused) stopPouring();
+      btnPause.textContent = paused ? '继续' : '暂停';
+      btnPause.classList.toggle('paused', paused);
+      statusBadge.textContent = paused ? '已暂停' : '运行中';
+      statusBadge.classList.toggle('paused', paused);
+    }
+
+    // ============================================================
+    // 鼠标抓取
+    // ============================================================
+    function applyGrab(dt) {
+      if (!state.grab) return;
+      const world = state.world;
+      const body = state.grab.body;
+      if (world.bodies.indexOf(body) === -1) {
+        state.grab = null;
+        return;
+      }
+
+      const anchor = body.localToWorld(state.grab.localAnchor);
+      const dx = state.mouse.x - anchor.x;
+      const dy = state.mouse.y - anchor.y;
+      const vel = body.velocityAtPoint(anchor);
+
+      // 临界阻尼弹簧：K 决定跟随强度，C 抑制震荡
+      const K = 260;
+      const C = 28;
+      let fx = (dx * K - vel.x * C) * body.mass;
+      let fy = (dy * K - vel.y * C) * body.mass;
+
+      // 限制最大加速度，防止猛拽导致数值爆炸
+      const maxForce = body.mass * 450;
+      const forceLen = Math.hypot(fx, fy);
+      if (forceLen > maxForce) {
+        const scale = maxForce / forceLen;
+        fx *= scale;
+        fy *= scale;
+      }
+
+      body.applyImpulse(new Vec2(fx * dt, fy * dt), anchor);
+      body.angularVelocity *= Math.max(0, 1 - 6 * dt);
+    }
+
+    function applyAmbientForces(dt) {
+      const world = state.world;
+      const time = world.time;
+      for (const body of world.bodies) {
+        if (body.isStatic) continue;
+        const ud = body.userData;
+        if (!ud || ud.kind !== 'leaf') continue;
+        // 微风：两个不同频率的正弦叠加，让落叶左右摇摆、翻转
+        const sway =
+          Math.sin(time * 1.9 + ud.phase) +
+          0.55 * Math.sin(time * 0.73 + ud.phase * 2.1);
+        body.applyImpulse(new Vec2(sway * 1.1 * body.mass * dt, 0), body.position);
+        body.angularVelocity += Math.sin(time * 4.1 + ud.phase * 1.3) * 2.4 * dt;
+      }
+    }
+
+    // ============================================================
+    // 流体：发射、循环、浮力
+    // ============================================================
+    function addFluidEmitter(x, y, rate, remaining, options) {
+      state.fluidEmitters.push(
+        Object.assign(
+          { x: x, y: y, rate: rate, remaining: remaining, spread: 0.08, vx: 0, vy: 0.6, acc: 0 },
+          options || {}
+        )
+      );
+    }
+
+    function updateFluidEmitters(dt) {
+      const emitters = state.fluidEmitters;
+      for (let i = emitters.length - 1; i >= 0; i--) {
+        const em = emitters[i];
+        em.acc += dt * em.rate;
+        let count = Math.floor(em.acc);
+        if (count > 0) {
+          em.acc -= count;
+          count = Math.min(count, em.remaining);
+          state.fluid.emit(em.x, em.y, count, {
+            spread: em.spread,
+            vx: em.vx,
+            vy: em.vy,
+          });
+          em.remaining -= count;
+        }
+        if (em.remaining <= 0) emitters.splice(i, 1);
+      }
+    }
+
+    /** 选「水」时按住指针持续倒水 */
+    function updatePouring(dt) {
+      if (!state.pouring) {
+        state.pourAcc = 0;
+        return;
+      }
+      state.pourAcc += dt * 80;
+      let count = Math.floor(state.pourAcc);
+      if (count <= 0) return;
+      state.pourAcc -= count;
+      count = Math.min(count, 2);
+      const mx = state.mouse.x;
+      const my = state.mouse.y;
+      for (let i = 0; i < count; i++) {
+        // 在出水口附近错开，避免粒子挤在一个点里炸开
+        state.fluid.addParticle(
+          mx + rand(-0.16, 0.16),
+          my - rand(0.05, 0.35),
+          rand(-0.15, 0.15),
+          1.2
+        );
+      }
+    }
+
+    /** 瀑布场景的循环：按固定流量把潭底的水送回高处，形成不断的水流 */
+    function updateFluidCycle(dt) {
+      const cycle = state.fluidCycle;
+      if (!cycle || !state.fluid) return;
+      const drain = cycle.drain;
+      const source = cycle.source;
+      const flow = cycle.flow || 0;
+      if (flow <= 0) return;
+
+      cycle.acc = (cycle.acc || 0) + dt * flow;
+      const particles = state.fluid.particles;
+      const n = particles.length;
+      if (n === 0) return;
+
+      while (cycle.acc >= 1) {
+        cycle.acc -= 1;
+        // 在排水区里随机找一个水粒子送回源头
+        let found = null;
+        const start = Math.floor(Math.random() * n);
+        for (let k = 0; k < n; k++) {
+          const p = particles[(start + k) % n];
+          if (p.x > drain.x0 && p.x < drain.x1 && p.y > drain.y) {
+            found = p;
+            break;
+          }
+        }
+        if (!found) break;
+        const spreadX = source.spreadX != null ? source.spreadX : 0.15;
+        const spreadY = source.spreadY != null ? source.spreadY : 0.1;
+        found.x = source.x + rand(-spreadX, spreadX);
+        found.y = source.y + rand(-spreadY, spreadY);
+        found.vx = rand(-0.3, 0.3);
+        found.vy = 0.8;
+      }
+    }
+
+    /** 木头 / 树叶在水里的浮力与拖曳 */
+    function updateBuoyancy(dt) {
+      const fluid = state.fluid;
+      const hasWater = fluid && fluid.count > 0;
+      const g = state.gravity;
+      const particles = hasWater ? fluid.particles : null;
+
+      for (const body of state.world.bodies) {
+        if (body.isStatic) continue;
+        const ud = body.userData;
+        if (!ud || (ud.kind !== 'wood' && ud.kind !== 'leaf')) continue;
+        if (!hasWater) {
+          ud.submerged = 0;
+          continue;
+        }
+
+        const aabb = body._aabb;
+        if (!aabb) continue;
+
+        let count = 0;
+        let sumVx = 0;
+        let sumVy = 0;
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          if (
+            p.x < aabb.minX || p.x > aabb.maxX ||
+            p.y < aabb.minY || p.y > aabb.maxY
+          ) {
+            continue;
+          }
+          count++;
+          sumVx += p.vx;
+          sumVy += p.vy;
+        }
+
+        const area =
+          body.shape.type === 'circle'
+            ? Math.PI * body.shape.radius * body.shape.radius
+            : body.shape.area;
+        const expected = Math.max(1, area / 0.0081);
+        const submerged = Math.min(1, count / expected);
+        ud.submerged = submerged;
+
+        if (submerged > 0.02 && g > 0) {
+          const density = ud.baseDensity || 0.6;
+          // 浮力：排开水的重量
+          body.velocity.y -= submerged * (1 / density) * g * dt * 0.9;
+
+          // 随水流移动 + 阻尼
+          const avgVx = count > 0 ? sumVx / count : 0;
+          const avgVy = count > 0 ? sumVy / count : 0;
+          const drag = submerged * 2.6 * dt;
+          body.velocity.x -= (body.velocity.x - avgVx) * drag;
+          body.velocity.y -= (body.velocity.y - avgVy) * drag;
+          body.angularVelocity *= Math.max(0, 1 - submerged * 2.5 * dt);
+        }
+      }
+    }
+
+    function physicsStep(dt) {
+      applyGrab(dt);
+      applyAmbientForces(dt);
+      updateBuoyancy(dt);
+      state.world.step(dt);
+
+      updateFluidEmitters(dt);
+      updatePouring(dt);
+      if (state.fluid) {
+        state.fluid.step(dt, state.world.bodies);
+        updateFluidCycle(dt);
+        state.fluid.cull(-4, -6, state.worldW + 4, state.worldH + 6);
+      }
+
+      limitVelocities();
+      cullBodies();
+    }
+
+    function limitVelocities() {
+      const world = state.world;
+      for (const body of world.bodies) {
+        if (body.isStatic) continue;
+        const speedSq = body.velocity.lengthSquared();
+        if (speedSq > 6400) {
+          const scale = 80 / Math.sqrt(speedSq);
+          body.velocity.scale(scale);
+        }
+        if (body.angularVelocity > 40) body.angularVelocity = 40;
+        else if (body.angularVelocity < -40) body.angularVelocity = -40;
+      }
+    }
+
+    function cullBodies() {
+      const world = state.world;
+      const W = state.worldW;
+      const H = state.worldH;
+      for (let i = world.bodies.length - 1; i >= 0; i--) {
+        const body = world.bodies[i];
+        if (body.isStatic) continue;
+        if (
+          body.position.y > H + 30 ||
+          body.position.y < -220 ||
+          body.position.x < -30 ||
+          body.position.x > W + 30
+        ) {
+          if (state.grab && state.grab.body === body) state.grab = null;
+          world.removeBody(body);
+        }
+      }
+    }
+
+    // ============================================================
+    // 渲染
+    // ============================================================
+    function drawBackground() {
+      ctx.fillStyle = bgGradient;
+      ctx.fillRect(0, 0, state.cssW, state.cssH);
+
+      const P = state.ppm;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.055)';
+      ctx.beginPath();
+      for (let x = 0; x <= state.cssW + 1; x += P) {
+        const px = Math.round(x) + 0.5;
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, state.cssH);
+      }
+      for (let y = 0; y <= state.cssH + 1; y += P) {
+        const py = Math.round(y) + 0.5;
+        ctx.moveTo(0, py);
+        ctx.lineTo(state.cssW, py);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.085)';
+      ctx.beginPath();
+      for (let x = 0; x <= state.cssW + 1; x += P * 5) {
+        const px = Math.round(x) + 0.5;
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, state.cssH);
+      }
+      for (let y = 0; y <= state.cssH + 1; y += P * 5) {
+        const py = Math.round(y) + 0.5;
+        ctx.moveTo(0, py);
+        ctx.lineTo(state.cssW, py);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = vignetteGradient;
+      ctx.fillRect(0, 0, state.cssW, state.cssH);
+    }
+
+    function drawArena() {
+      const P = state.ppm;
+      const floorY = state.floorTop * P;
+
+      // 场地边界（很淡）
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.1)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, state.cssW - 1, floorY - 1);
+
+      // 地板顶部发光线
+      const grad = ctx.createLinearGradient(0, 0, state.cssW, 0);
+      grad.addColorStop(0, 'rgba(125, 211, 252, 0.08)');
+      grad.addColorStop(0.5, 'rgba(125, 211, 252, 0.55)');
+      grad.addColorStop(1, 'rgba(125, 211, 252, 0.08)');
+      ctx.save();
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = 'rgba(125, 211, 252, 0.4)';
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.moveTo(0, floorY);
+      ctx.lineTo(state.cssW, floorY);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const pathScratch = { minY: 0, maxY: 0 };
+
+    function traceShape(shape, P) {
+      ctx.beginPath();
+      if (shape.type === 'circle') {
+        ctx.arc(0, 0, shape.radius * P, 0, Math.PI * 2);
+      } else {
+        const verts = shape.vertices;
+        ctx.moveTo(verts[0].x * P, verts[0].y * P);
+        for (let i = 1; i < verts.length; i++) {
+          ctx.lineTo(verts[i].x * P, verts[i].y * P);
+        }
+        ctx.closePath();
+      }
+    }
+
+    function polygonBounds(shape) {
+      if (shape._demoBounds) return shape._demoBounds;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const v of shape.vertices) {
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+      }
+      shape._demoBounds = { minY, maxY };
+      return shape._demoBounds;
+    }
+
+    function bodyShadow(blur, offsetY) {
+      if (state.world.bodies.length >= 80) return;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = blur;
+      ctx.shadowOffsetY = offsetY;
+    }
+
+    function clearShadow() {
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+    }
+
+    function drawRock(body, P) {
+      const base = body.userData.color;
+      const bounds = polygonBounds(body.shape);
+      const grad = ctx.createLinearGradient(0, bounds.minY * P, 0, bounds.maxY * P);
+      grad.addColorStop(0, shade(base, 0.3));
+      grad.addColorStop(0.55, base);
+      grad.addColorStop(1, shade(base, -0.34));
+
+      traceShape(body.shape, P);
+      bodyShadow(16, 6);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      clearShadow();
+
+      for (const speck of body.userData.specks) {
+        ctx.beginPath();
+        ctx.arc(speck.x * P, speck.y * P, Math.max(0.6, speck.r * P), 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(26, 28, 32, ' + speck.a + ')';
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    function drawWood(body, P) {
+      const ud = body.userData;
+      const base = ud.color || '#8b5e3c';
+      const length = ud.length * P;
+      const thickness = ud.thickness * P;
+      const halfT = thickness / 2;
+
+      // 木纹与断面裁剪在形状内部
+      ctx.save();
+      traceShape(body.shape, P);
+      ctx.clip();
+
+      const grad = ctx.createLinearGradient(0, -halfT, 0, halfT);
+      grad.addColorStop(0, shade(base, 0.3));
+      grad.addColorStop(0.45, base);
+      grad.addColorStop(1, shade(base, -0.35));
+      ctx.fillStyle = grad;
+      ctx.fillRect(-length / 2, -halfT, length, thickness);
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(52, 28, 12, 0.24)';
+      for (const g of [-0.24, 0.02, 0.28]) {
+        const y = g * halfT;
+        ctx.beginPath();
+        ctx.moveTo(-length * 0.42, y);
+        ctx.bezierCurveTo(
+          -length * 0.1, y - halfT * 0.5,
+          length * 0.12, y + halfT * 0.45,
+          length * 0.42, y
+        );
+        ctx.stroke();
+      }
+
+      // 断面的年轮
+      ctx.strokeStyle = 'rgba(52, 28, 12, 0.3)';
+      for (const scale of [1, 0.55]) {
+        ctx.beginPath();
+        ctx.ellipse(
+          length * 0.31, 0,
+          halfT * 0.35 * scale,
+          halfT * 0.85 * scale,
+          0, 0, Math.PI * 2
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      traceShape(body.shape, P);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    function drawLeaf(body, P) {
+      const ud = body.userData;
+      const base = ud.color || '#8bc34a';
+      const length = ud.length * P;
+      const width = ud.width * P;
+      const bounds = polygonBounds(body.shape);
+
+      const grad = ctx.createLinearGradient(0, bounds.minY * P, 0, bounds.maxY * P);
+      grad.addColorStop(0, shade(base, 0.34));
+      grad.addColorStop(0.55, base);
+      grad.addColorStop(1, shade(base, -0.26));
+
+      traceShape(body.shape, P);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      // 叶脉裁剪在叶形内部
+      ctx.save();
+      traceShape(body.shape, P);
+      ctx.clip();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(34, 62, 26, 0.42)';
+      ctx.beginPath();
+      ctx.moveTo(-length * 0.42, 0);
+      ctx.quadraticCurveTo(0, -width * 0.03, length * 0.42, 0);
+      ctx.stroke();
+
+      for (const t of [-0.2, 0.03, 0.24]) {
+        const x = length * t;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.quadraticCurveTo(x + length * 0.08, -width * 0.22, x + length * 0.16, -width * 0.36);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.quadraticCurveTo(x + length * 0.08, width * 0.22, x + length * 0.16, width * 0.36);
+        ctx.stroke();
+      }
+
+      // 叶柄
+      ctx.strokeStyle = 'rgba(120, 85, 40, 0.7)';
+      ctx.beginPath();
+      ctx.moveTo(-length * 0.42, 0);
+      ctx.lineTo(-length * 0.55, width * 0.03);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawGeneric(body, P) {
+      const base = body.color || '#9aa1a8';
+      traceShape(body.shape, P);
+      ctx.fillStyle = base;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    function drawBody(body) {
+      const P = state.ppm;
+      if (body.position.x * P < -120 || body.position.x * P > state.cssW + 120) return;
+
+      ctx.save();
+      ctx.translate(body.position.x * P, body.position.y * P);
+      ctx.rotate(body.angle);
+
+      if (body.isStatic) {
+        if (body.userData && body.userData.invisible) {
+          ctx.restore();
+          return;
+        }
+        const material = body.userData && body.userData.material;
+        if (!isArena(body) && material === 'wood') {
+          drawWood(body, P);
+        } else if (!isArena(body) && material === 'rock') {
+          drawRock(body, P);
+        } else {
+          traceShape(body.shape, P);
+          ctx.fillStyle = isArena(body) ? '#0c1423' : body.color || '#334155';
+          ctx.fill();
+          ctx.strokeStyle = isArena(body)
+            ? 'rgba(148, 163, 184, 0.16)'
+            : 'rgba(148, 163, 184, 0.32)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      } else {
+        const kind = body.userData && body.userData.kind;
+        if (kind === 'rock') drawRock(body, P);
+        else if (kind === 'wood') drawWood(body, P);
+        else if (kind === 'leaf') drawLeaf(body, P);
+        else drawGeneric(body, P);
+      }
+
+      if (state.grab && state.grab.body === body) {
+        traceShape(body.shape, P);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    // ============================================================
+    // 水面渲染：把粒子泼进一张低分辨率密度场，再平滑放大成连续水面
+    // ============================================================
+    function drawFluid() {
+      const fluid = state.fluid;
+      if (!fluid || fluid.count === 0 || !state.fluidCanvas) return;
+
+      const canvas = state.fluidCanvas;
+      const fw = canvas.width;
+      const fh = canvas.height;
+      const field = state.fluidField;
+      const image = state.fluidImage;
+      const data = image.data;
+      const scale = state.fluidScale;
+      const cellP = state.ppm / scale;
+      const splatRadius = Math.max(4, 0.34 * cellP);
+      const invR2 = 1 / (splatRadius * splatRadius);
+      const particles = fluid.particles;
+
+      // 只处理水体所在的包围盒，省掉大量空像素
+      let minFx = Infinity;
+      let minFy = Infinity;
+      let maxFx = -Infinity;
+      let maxFy = -Infinity;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const fx = p.x * cellP;
+        const fy = p.y * cellP;
+        if (fx < minFx) minFx = fx;
+        if (fx > maxFx) maxFx = fx;
+        if (fy < minFy) minFy = fy;
+        if (fy > maxFy) maxFy = fy;
+      }
+
+      const pad = splatRadius + 2;
+      const bx0 = Math.max(0, Math.floor(minFx - pad));
+      const bx1 = Math.min(fw - 1, Math.ceil(maxFx + pad));
+      const by0 = Math.max(0, Math.floor(minFy - pad));
+      const by1 = Math.min(fh - 1, Math.ceil(maxFy + pad));
+      if (bx0 > bx1 || by0 > by1) return;
+
+      data.fill(0);
+      field.fill(0);
+      state.pourBottom = state.pouring
+        ? (waterSurfaceAt(state.mouse.x, 0.8) || state.floorTop)
+        : 0;
+
+      // 把每个水粒子泼成一个小核，重叠后形成连续水面
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const fx = p.x * cellP;
+        const fy = p.y * cellP;
+        if (fx < bx0 - pad || fx > bx1 + pad || fy < by0 - pad || fy > by1 + pad) continue;
+        // 瀑布/倒水的水幕区域由水带专门渲染，粒子不再叠加成团
+        if (isInsideWaterColumn(p.x, p.y)) continue;
+
+        const x0 = Math.max(bx0, Math.floor(fx - splatRadius));
+        const x1 = Math.min(bx1, Math.ceil(fx + splatRadius));
+        const y0 = Math.max(by0, Math.floor(fy - splatRadius));
+        const y1 = Math.min(by1, Math.ceil(fy + splatRadius));
+
+        for (let y = y0; y <= y1; y++) {
+          const dy = y + 0.5 - fy;
+          const dy2 = dy * dy;
+          const row = y * fw;
+          for (let x = x0; x <= x1; x++) {
+            const dx = x + 0.5 - fx;
+            const d2 = (dx * dx + dy2) * invR2;
+            if (d2 >= 1) continue;
+            const w = 1 - d2;
+            field[row + x] += w * w;
+          }
+        }
+      }
+
+      // 对密度场做一次平滑，让水看起来是连续液体而不是一团团粒子
+      const blur = state.fluidBlur;
+      const radius = 2;
+      for (let y = by0; y <= by1; y++) {
+        const row = y * fw;
+        for (let x = bx0; x <= bx1; x++) {
+          let sum = 0;
+          let count = 0;
+          for (let k = -radius; k <= radius; k++) {
+            const xx = x + k;
+            if (xx < 0 || xx >= fw) continue;
+            sum += field[row + xx];
+            count++;
+          }
+          blur[row + x] = sum / count;
+        }
+      }
+      for (let y = by0; y <= by1; y++) {
+        const row = y * fw;
+        for (let x = bx0; x <= bx1; x++) {
+          let sum = 0;
+          let count = 0;
+          for (let k = -radius; k <= radius; k++) {
+            const yy = y + k;
+            if (yy < 0 || yy >= fh) continue;
+            sum += blur[yy * fw + x];
+            count++;
+          }
+          field[row + x] = sum / count;
+        }
+      }
+
+      // 密度 → 水面颜色：整体青蓝渐变 + 表面高光
+      const deep = [18, 104, 138];
+      const shallow = [132, 234, 245];
+      const time = state.world.time;
+      for (let y = by0; y <= by1; y++) {
+        const row = y * fw;
+        const yn = y / fh;
+        const depthT = Math.max(0, Math.min(1, (yn - 0.18) / 0.82));
+        const baseR = shallow[0] + (deep[0] - shallow[0]) * depthT;
+        const baseG = shallow[1] + (deep[1] - shallow[1]) * depthT;
+        const baseB = shallow[2] + (deep[2] - shallow[2]) * depthT;
+
+        for (let x = bx0; x <= bx1; x++) {
+          const index = (row + x) * 4;
+          const density = field[row + x];
+          if (density < 0.22) continue;
+
+          const above = y > by0 ? field[(y - 1) * fw + x] : 0;
+          const isSurface = density > 0.4 && above < density * 0.62;
+
+          let cr = baseR;
+          let cg = baseG;
+          let cb = baseB;
+
+          if (isSurface) {
+            // 水面反光：偏白的高光
+            cr += 75;
+            cg += 45;
+            cb += 22;
+          }
+
+          // 轻微波光
+          const shimmer =
+            0.03 * Math.sin(x * 0.06 + y * 0.05 + time * 1.6) * (1 - depthT * 0.5);
+          cr *= 1 + shimmer;
+          cg *= 1 + shimmer;
+          cb *= 1 + shimmer;
+
+          data[index] = Math.min(255, Math.round(cr));
+          data[index + 1] = Math.min(255, Math.round(cg));
+          data[index + 2] = Math.min(255, Math.round(cb));
+          data[index + 3] = Math.round(
+            Math.max(0, Math.min(0.93, 0.58 + density * 0.1 + (isSurface ? 0.04 : 0))) * 255
+          );
+        }
+      }
+
+      state.fluidCtx.putImageData(image, 0, 0);
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(canvas, 0, 0, state.cssW, state.cssH);
+      ctx.restore();
+    }
+
+    /** 水花 / 白沫：只给飞溅出来的稀疏水粒子加一点点白色 */
+    function drawFluidFoam() {
+      const fluid = state.fluid;
+      if (!fluid || fluid.count === 0) return;
+      const P = state.ppm;
+      ctx.save();
+      for (const p of fluid.particles) {
+        if (p.rho > 1.1) continue;
+        const speedSq = p.vx * p.vx + p.vy * p.vy;
+        if (speedSq < 100) continue;
+        const speed = Math.sqrt(speedSq);
+        const alpha = Math.min(0.3, (speed - 10) * 0.04);
+        if (alpha <= 0) continue;
+        ctx.beginPath();
+        ctx.arc(p.x * P, p.y * P, 1 + Math.min(1.2, speed * 0.08), 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(230, 252, 255, ' + alpha.toFixed(3) + ')';
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    /** 在给定横坐标附近找水面高度（只统计池水，忽略下落中的稀疏水珠） */
+    function waterSurfaceAt(x, halfWidth) {
+      const fluid = state.fluid;
+      if (!fluid) return null;
+      let best = Infinity;
+      for (const p of fluid.particles) {
+        if (p.rho < 2.2) continue;
+        if (Math.abs(p.x - x) > halfWidth) continue;
+        if (p.y < best) best = p.y;
+      }
+      return Number.isFinite(best) ? best : null;
+    }
+
+    /** 木槽、木坡上的湿润水膜 */
+    function drawWetPaths() {
+      const paths = state.wetPaths;
+      if (!paths.length) return;
+      const P = state.ppm;
+      const time = state.world.time;
+      ctx.save();
+      ctx.lineCap = 'round';
+      for (const path of paths) {
+        // 湿润的底层
+        ctx.strokeStyle = 'rgba(96, 206, 230, 0.24)';
+        ctx.lineWidth = path.width * P;
+        ctx.beginPath();
+        ctx.moveTo(path.x0 * P, path.y0 * P);
+        ctx.lineTo(path.x1 * P, path.y1 * P);
+        ctx.stroke();
+
+        // 表面水膜
+        ctx.strokeStyle = 'rgba(168, 242, 252, 0.44)';
+        ctx.lineWidth = path.width * 0.7 * P;
+        ctx.beginPath();
+        ctx.moveTo(path.x0 * P, (path.y0 - 0.02) * P);
+        ctx.lineTo(path.x1 * P, (path.y1 - 0.02) * P);
+        ctx.stroke();
+
+        // 流动高光
+        ctx.strokeStyle = 'rgba(240, 254, 255, 0.4)';
+        ctx.lineWidth = 1.4;
+        const dash = 0.55 * P;
+        ctx.setLineDash([dash, dash * 1.6]);
+        ctx.lineDashOffset = -((time * 2.2 * P) % (dash * 2.6));
+        ctx.beginPath();
+        ctx.moveTo(path.x0 * P, (path.y0 - 0.035) * P);
+        ctx.lineTo(path.x1 * P, (path.y1 - 0.035) * P);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
+
+    /** 瀑布水幕：用半透明水带 + 流动高光补足粒子不够密时的连续感 */
+    function drawWaterfalls() {
+      const fluid = state.fluid;
+      if (!fluid || fluid.count === 0) return;
+      const time = state.world.time;
+
+      for (const fall of state.waterfalls) {
+        drawWaterRibbon(fall.x, fall.topY, fall.width, fall.bottom, time);
+      }
+
+      // 玩家正在倒水时，也画一条从指针落向水面的水带
+      if (state.pouring) {
+        let surfaceY = waterSurfaceAt(state.mouse.x, 0.9);
+        if (surfaceY == null) surfaceY = state.floorTop - 0.05;
+        drawWaterRibbon(
+          state.mouse.x,
+          state.mouse.y - 0.3,
+          0.42,
+          surfaceY,
+          time
+        );
+      }
+    }
+
+    function drawWaterRibbon(x, topY, baseWidth, waterBottom, time) {
+      const P = state.ppm;
+      const bottomY = Math.max(topY + 0.5, waterBottom + 0.04);
+      const segments = 18;
+      const left = [];
+      const right = [];
+
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const y = topY + (bottomY - topY) * t;
+        const half =
+          (baseWidth * (0.35 + 0.65 * t)) / 2 +
+          Math.sin(t * 9 + time * 3.1) * 0.03 * (0.4 + t) +
+          Math.sin(t * 4.3 - time * 1.7) * 0.02;
+        left.push([x - half, y]);
+        right.push([x + half, y]);
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(left[0][0] * P, left[0][1] * P);
+      for (let i = 1; i < left.length; i++) {
+        ctx.lineTo(left[i][0] * P, left[i][1] * P);
+      }
+      for (let i = right.length - 1; i >= 0; i--) {
+        ctx.lineTo(right[i][0] * P, right[i][1] * P);
+      }
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(0, topY * P, 0, bottomY * P);
+      grad.addColorStop(0, 'rgba(178, 244, 255, 0.42)');
+      grad.addColorStop(0.55, 'rgba(96, 216, 240, 0.56)');
+      grad.addColorStop(1, 'rgba(148, 238, 250, 0.6)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // 水幕中央的高光核心
+      ctx.strokeStyle = 'rgba(238, 253, 255, 0.22)';
+      ctx.lineWidth = Math.max(2, baseWidth * 0.18 * P);
+      ctx.beginPath();
+      ctx.moveTo(x * P, topY * P);
+      ctx.lineTo(x * P, bottomY * P);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(228, 253, 255, 0.3)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // 向下流动的纵向水纹
+      ctx.strokeStyle = 'rgba(240, 254, 255, 0.26)';
+      for (let k = 0; k < 4; k++) {
+        const offset = ((k + 0.5) / 4 - 0.5) * baseWidth * 0.8;
+        ctx.beginPath();
+        for (let i = 0; i <= segments; i++) {
+          const t = i / segments;
+          const y = topY + (bottomY - topY) * t;
+          const px = x + offset + Math.sin(t * 12 + time * 2.2 + k * 1.7) * 0.03;
+          if (i === 0) ctx.moveTo(px * P, y * P);
+          else ctx.lineTo(px * P, y * P);
+        }
+        ctx.lineWidth = k % 2 === 0 ? 1.6 : 1;
+        ctx.stroke();
+      }
+
+      // 落在水面上的泡沫
+      ctx.beginPath();
+      ctx.ellipse(
+        x * P,
+        (bottomY + 0.03) * P,
+        baseWidth * 0.85 * P,
+        baseWidth * 0.2 * P,
+        0, 0, Math.PI * 2
+      );
+      ctx.fillStyle = 'rgba(225, 251, 255, 0.2)';
+      ctx.fill();
+
+      // 落水飞溅的小水珠（纯视觉，让落点更有冲击感）
+      for (let k = 0; k < 6; k++) {
+        const life = ((time * 1.1 + k / 6) % 1) * 0.65;
+        const vx = (k - 2.5) * 1.45;
+        const vy = -3.1 - (k % 2) * 0.8;
+        const px = x + vx * life;
+        const py = bottomY + vy * life + 4.9 * life * life;
+        if (py > bottomY + 0.15) continue;
+        const alpha = 0.5 * (1 - life / 0.65);
+        ctx.beginPath();
+        ctx.arc(px * P, py * P, 1.4 + (k % 2), 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232, 252, 255, ' + alpha.toFixed(2) + ')';
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    /** 判断某个点是否落在水幕（瀑布/倒水）的区域里 */
+    function isInsideWaterColumn(x, y) {
+      const falls = state.waterfalls;
+      for (let i = 0; i < falls.length; i++) {
+        const fall = falls[i];
+        if (
+          y > fall.topY - 0.6 &&
+          y < fall.bottom + 0.2 &&
+          Math.abs(x - fall.x) < fall.width * 1.2
+        ) {
+          return true;
+        }
+      }
+      if (state.pouring) {
+        if (
+          y > state.mouse.y - 0.6 &&
+          y < state.pourBottom + 0.15 &&
+          Math.abs(x - state.mouse.x) < 0.34
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function drawAfterWater(body) {
+      const ud = body.userData;
+      return Boolean(ud && ud.submerged > 0.05 && (ud.kind === 'wood' || ud.kind === 'leaf'));
+    }
+
+    function drawContacts() {
+      const world = state.world;
+      if (!world || !state.showContacts) return;
+      const P = state.ppm;
+
+      ctx.save();
+      for (const contact of world.contacts) {
+        const n = contact.normal;
+        for (const point of contact.points) {
+          const x = point.position.x * P;
+          const y = point.position.y * P;
+
+          ctx.beginPath();
+          ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+          ctx.fillStyle = '#ff5d8f';
+          ctx.fill();
+
+          if (state.showNormals) {
+            const len = 24;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + n.x * len, y + n.y * len);
+            ctx.strokeStyle = 'rgba(255, 159, 67, 0.9)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(x + n.x * len, y + n.y * len, 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff9f43';
+            ctx.fill();
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawGrab() {
+      const grab = state.grab;
+      if (!grab) return;
+      const body = grab.body;
+      if (!body) return;
+
+      const P = state.ppm;
+      const anchor = body.localToWorld(grab.localAnchor);
+      const ax = anchor.x * P;
+      const ay = anchor.y * P;
+      const mx = state.mouse.x * P;
+      const my = state.mouse.y * P;
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(mx, my);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.beginPath();
+      ctx.arc(ax, ay, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(125, 211, 252, 0.9)';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function render() {
+      drawBackground();
+      if (!state.world) return;
+      // 静态刚体 → 动态刚体（水下部分除外）→ 水面 → 漂浮物 → 泡沫
+      for (const body of state.world.bodies) {
+        if (body.isStatic) drawBody(body);
+      }
+      drawArena();
+      for (const body of state.world.bodies) {
+        if (!body.isStatic && !drawAfterWater(body)) drawBody(body);
+      }
+      drawWetPaths();
+      drawFluid();
+      drawWaterfalls();
+      for (const body of state.world.bodies) {
+        if (!body.isStatic && drawAfterWater(body)) drawBody(body);
+      }
+      drawFluidFoam();
+      drawContacts();
+      drawGrab();
+    }
+
+    // ============================================================
+    // HUD
+    // ============================================================
+    function updateHud() {
+      if (!state.world) return;
+      statFps.textContent = String(Math.round(state.fps));
+      statBodies.textContent = String(state.world.dynamicBodyCount);
+      statWater.textContent = String(state.fluid ? state.fluid.count : 0);
+      statContacts.textContent = String(state.world.contacts.length);
+      statStep.textContent = state.stepMs.toFixed(2);
+    }
+
+    // ============================================================
+    // 主循环
+    // ============================================================
+    let lastTime = performance.now();
+
+    function frame(now) {
+      const rawDt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      state.frameCount++;
+      if (!state.fpsTime) state.fpsTime = now;
+      if (now - state.fpsTime >= 500) {
+        state.fps = (state.frameCount * 1000) / (now - state.fpsTime);
+        state.frameCount = 0;
+        state.fpsTime = now;
+      }
+
+      if (now - state.hudTime >= 250) {
+        updateHud();
+        state.hudTime = now;
+      }
+
+      if (!state.paused && state.world) {
+        state.acc += rawDt;
+        let steps = 0;
+        const t0 = performance.now();
+        while (state.acc >= FIXED_DT && steps < MAX_STEPS) {
+          physicsStep(FIXED_DT);
+          state.acc -= FIXED_DT;
+          steps++;
+        }
+        if (steps === MAX_STEPS) state.acc = 0;
+        const elapsed = performance.now() - t0;
+        if (steps > 0) {
+          const perStep = elapsed / steps;
+          state.stepMs = state.stepMs * 0.85 + perStep * 0.15;
+        }
+      } else {
+        state.acc = 0;
+      }
+
+      render();
+      requestAnimationFrame(frame);
+    }
+
+    // ============================================================
+    // 事件绑定
+    // ============================================================
+    function screenToWorld(clientX, clientY) {
+      return new Vec2(clientX / state.ppm, clientY / state.ppm);
+    }
+
+    function selectShape(kind) {
+      state.shapeKind = kind;
+      if (kind !== 'water') stopPouring();
+      shapeSeg.querySelectorAll('button').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.shape === kind);
+      });
+    }
+
+    function stopPouring() {
+      state.pouring = false;
+      state.pourAcc = 0;
+      document.body.classList.remove('pouring');
+    }
+
+    function startPouring(point) {
+      const W = state.worldW;
+      const x = clamp(point.x, 0.25, W - 0.25);
+      const y = clamp(point.y, 0.25, state.floorTop - 0.08);
+      state.mouse.set(x, y);
+      state.pouring = true;
+      state.pourAcc = 0;
+      state.fluid.emit(x, y - 0.4, 4, { spread: 0.2, vy: 1.0 });
+      document.body.classList.add('pouring');
+    }
+
+    function bindSlider(input, output, format, onChange) {
+      function update() {
+        const value = parseFloat(input.value);
+        output.textContent = format(value);
+        const min = parseFloat(input.min);
+        const max = parseFloat(input.max);
+        input.style.setProperty('--fill', (((value - min) / (max - min)) * 100) + '%');
+        onChange(value);
+      }
+      input.addEventListener('input', update);
+      update();
+    }
+
+    function initEvents() {
+      canvas.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (!state.world) return;
+        const p = screenToWorld(e.clientX, e.clientY);
+        state.mouse.copy(p);
+
+        if (state.shapeKind === 'water') {
+          startPouring(p);
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+          e.preventDefault();
+          return;
+        }
+
+        const body = state.world.queryPoint(p, false);
+        if (body) {
+          state.grab = { body: body, localAnchor: body.worldToLocal(p) };
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+          document.body.classList.add('dragging');
+        } else {
+          spawnAt(p);
+        }
+        e.preventDefault();
+      });
+
+      canvas.addEventListener('pointermove', function (e) {
+        const p = screenToWorld(e.clientX, e.clientY);
+        if (state.pouring) {
+          const W = state.worldW;
+          p.x = clamp(p.x, 0.25, W - 0.25);
+          p.y = clamp(p.y, 0.25, state.floorTop - 0.08);
+        }
+        state.mouse.copy(p);
+      });
+
+      function endGrab(e) {
+        if (state.grab) {
+          state.grab = null;
+          document.body.classList.remove('dragging');
+        }
+        stopPouring();
+        if (e && e.pointerId != null) {
+          try {
+            if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+          } catch (err) { /* ignore */ }
+        }
+      }
+      canvas.addEventListener('pointerup', endGrab);
+      canvas.addEventListener('pointercancel', endGrab);
+      window.addEventListener('blur', endGrab);
+
+      shapeSeg.querySelectorAll('button').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          selectShape(btn.dataset.shape);
+        });
+      });
+
+      document.querySelectorAll('[data-preset]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          loadPreset(btn.dataset.preset);
+        });
+      });
+
+      btnPause.addEventListener('click', function () {
+        setPaused(!state.paused);
+      });
+
+      btnStep.addEventListener('click', function () {
+        if (!state.paused) setPaused(true);
+        if (state.world) {
+          physicsStep(FIXED_DT);
+          updateHud();
+        }
+      });
+
+      panelToggle.addEventListener('click', function () {
+        const collapsed = panel.classList.toggle('collapsed');
+        panelToggle.textContent = collapsed ? '+' : '−';
+        panelToggle.setAttribute('aria-label', collapsed ? '展开参数面板' : '折叠参数面板');
+      });
+
+      btnPanelMobile.addEventListener('click', function () {
+        const open = panel.classList.toggle('mobile-open');
+        btnPanelMobile.classList.toggle('active', open);
+        btnPanelMobile.textContent = open ? '收起参数' : '参数';
+      });
+
+      bindSlider(inGravity, outGravity, function (v) { return v.toFixed(1) + ' m/s²'; }, function (v) {
+        state.gravity = v;
+        if (state.world) state.world.gravity.y = v;
+        if (state.fluid) state.fluid.gravity = v;
+      });
+
+      bindSlider(inRestitution, outRestitution, function (v) { return v.toFixed(2) + '×'; }, function (v) {
+        state.restitutionScale = v;
+        if (!state.world) return;
+        for (const body of state.world.bodies) {
+          const ud = body.userData;
+          if (body.isStatic || !ud || ud.baseRestitution == null) continue;
+          body.restitution = clamp(ud.baseRestitution * v, 0, 1);
+        }
+      });
+
+      bindSlider(inFriction, outFriction, function (v) { return v.toFixed(2) + '×'; }, function (v) {
+        state.frictionScale = v;
+        if (!state.world) return;
+        for (const body of state.world.bodies) {
+          const ud = body.userData;
+          if (body.isStatic || !ud || ud.baseFriction == null) continue;
+          body.friction = Math.max(0, ud.baseFriction * v);
+        }
+      });
+
+      bindSlider(inIterations, outIterations, function (v) { return String(Math.round(v)); }, function (v) {
+        state.iterations = Math.round(v);
+        if (state.world) state.world.iterations = state.iterations;
+      });
+
+      inContacts.addEventListener('change', function () {
+        state.showContacts = inContacts.checked;
+        if (!inContacts.checked) {
+          inNormals.checked = false;
+          state.showNormals = false;
+        }
+      });
+
+      inNormals.addEventListener('change', function () {
+        state.showNormals = inNormals.checked;
+        if (inNormals.checked) {
+          inContacts.checked = true;
+          state.showContacts = true;
+        }
+      });
+
+      window.addEventListener('keydown', function (e) {
+        const tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          setPaused(!state.paused);
+        } else if (e.code === 'KeyR') {
+          loadPreset(state.preset);
+        } else if (e.code === 'Digit1') {
+          selectShape('rock');
+        } else if (e.code === 'Digit2') {
+          selectShape('wood');
+        } else if (e.code === 'Digit3') {
+          selectShape('water');
+        } else if (e.code === 'Digit4') {
+          selectShape('leaf');
+        }
+      });
+
+      let resizeTimer = null;
+      window.addEventListener('resize', function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(resizeCanvas, 140);
+      });
+    }
+
+    window.addEventListener('error', function (event) {
+      errorBanner.hidden = false;
+      errorBanner.textContent = '运行时错误：' + (event.message || '未知错误');
+    });
+
+    // ============================================================
+    // 启动
+    // ============================================================
+    resizeCanvas();
+    initEvents();
+    setPaused(false);
+
+    // 可选的 URL 参数（便于分享场景 / 截图调试）：
+    //   ?preset=showcase|cairn|waterfall|leaves|empty&sim=3&contacts=1&normals=1&paused=1
+    const params = new URLSearchParams(window.location.search);
+    const presetParam = params.get('preset');
+    if (presetParam) loadPreset(presetParam);
+    if (params.get('contacts') === '1' || params.get('normals') === '1') {
+      state.showContacts = true;
+      inContacts.checked = true;
+    }
+    if (params.get('normals') === '1') {
+      state.showNormals = true;
+      inNormals.checked = true;
+    }
+    const simSeconds = parseFloat(params.get('sim') || '0');
+    if (simSeconds > 0) {
+      const steps = Math.min(1200, Math.round(simSeconds / FIXED_DT));
+      for (let i = 0; i < steps; i++) physicsStep(FIXED_DT);
+      updateHud();
+    }
+    if (params.get('paused') === '1') setPaused(true);
+
+    if (params.get('debug') === '1') {
+      errorBanner.hidden = false;
+      errorBanner.style.background = 'rgba(8, 15, 26, 0.92)';
+      errorBanner.style.borderColor = 'rgba(125, 211, 252, 0.4)';
+      errorBanner.style.color = '#bae6fd';
+      errorBanner.textContent =
+        'viewport ' + window.innerWidth + '×' + window.innerHeight +
+        ' dpr ' + state.dpr +
+        ' canvas ' + canvas.width + '×' + canvas.height +
+        ' ppm ' + state.ppm.toFixed(2) +
+        ' world ' + state.worldW.toFixed(2) + '×' + state.worldH.toFixed(2) +
+        ' floor ' + state.floorTop.toFixed(2) +
+        ' cssH ' + state.cssH;
+    }
+
+    requestAnimationFrame(frame);
+
+    // 方便调试
+    window.__tiny2dDemo = {
+      state: state,
+      loadPreset: loadPreset,
+      setPaused: setPaused,
+      spawnAt: spawnAt,
+    };
+  })();
+  </script>
+</body>
+</html>

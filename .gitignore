@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# temp / QA artifacts
+.qa/
+.verify*/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
